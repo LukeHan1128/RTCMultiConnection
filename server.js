@@ -1,115 +1,123 @@
-// Muaz Khan      - www.MuazKhan.com
-// MIT License    - www.WebRTC-Experiment.com/licence
-// Documentation  - github.com/muaz-khan/RTCMultiConnection
+// http://127.0.0.1:9001
+// http://localhost:9001
 
-function resolveURL(url) {
-    var isWin = !!process.platform.match(/^win/);
-    if (!isWin) return url;
-    return url.replace(/\//g, '\\');
-}
+const fs = require('fs');
+const path = require('path');
+const url = require('url');
+var httpServer = require('http');
 
-// Please use HTTPs on non-localhost domains.
+const ioServer = require('socket.io');
+const RTCMultiConnectionServer = require('rtcmulticonnection-server');
+
+var PORT = 9001;
 var isUseHTTPs = false;
 
-// var port = 443;
-var port = process.env.PORT || 9001;
-
-try {
-    process.argv.forEach(function(val, index, array) {
-        if (!val) return;
-
-        if (val === '--ssl') {
-            isUseHTTPs = true;
-        }
-    });
-} catch (e) {}
-
-var fs = require('fs');
-var path = require('path');
-
-var ssl_key = fs.readFileSync(path.join(__dirname, resolveURL('fake-keys/privatekey.pem')));
-var ssl_cert = fs.readFileSync(path.join(__dirname, resolveURL('fake-keys/certificate.pem')));
-var ssl_cabundle = null;
-
-// force auto reboot on failures
-var autoRebootServerOnFailure = false;
-
-// skip/remove this try-catch block if you're NOT using "config.json"
-try {
-    var config = require('./config.json');
-
-    if ((config.port || '').toString() !== '9001') {
-        port = parseInt(config.port);
-    }
-
-    if ((config.autoRebootServerOnFailure || '').toString() === 'true') {
-        autoRebootServerOnFailure = true;
-    }
-
-    if ((config.isUseHTTPs || '').toString() === 'true') {
-        isUseHTTPs = true;
-    }
-
-    ['ssl_key', 'ssl_cert', 'ssl_cabundle'].forEach(function(key) {
-        if (!config['key'] || config['key'].toString().length) {
-            return;
-        }
-
-        if (config['key'].indexOf('/path/to/') === -1) {
-            if (key === 'ssl_key') {
-                ssl_key = fs.readFileSync(path.join(__dirname, config['ssl_key']));
-            }
-
-            if (key === 'ssl_cert') {
-                ssl_cert = fs.readFileSync(path.join(__dirname, config['ssl_cert']));
-            }
-
-            if (key === 'ssl_cabundle') {
-                ssl_cabundle = fs.readFileSync(path.join(__dirname, config['ssl_cabundle']));
-            }
-        }
-    });
-} catch (e) {}
-
-// see how to use a valid certificate:
-// https://github.com/muaz-khan/WebRTC-Experiment/issues/62
-var options = {
-    key: ssl_key,
-    cert: ssl_cert,
-    ca: ssl_cabundle
+const jsonPath = {
+    config: 'config.json',
+    logs: 'logs.json'
 };
 
-// You don't need to change anything below
+const BASH_COLORS_HELPER = RTCMultiConnectionServer.BASH_COLORS_HELPER;
+const getValuesFromConfigJson = RTCMultiConnectionServer.getValuesFromConfigJson;
+const getBashParameters = RTCMultiConnectionServer.getBashParameters;
+const resolveURL = RTCMultiConnectionServer.resolveURL;
 
-var server = require(isUseHTTPs ? 'https' : 'http');
-var url = require('url');
+var config = getValuesFromConfigJson(jsonPath);
+config = getBashParameters(config, BASH_COLORS_HELPER);
+
+// if user didn't modifed "PORT" object
+// then read value from "config.json"
+if(PORT === 9001) {
+    PORT = config.port;
+}
+if(isUseHTTPs === false) {
+    isUseHTTPs = config.isUseHTTPs;
+}
 
 function serverHandler(request, response) {
-    try {
-        var uri = url.parse(request.url).pathname,
-            filename = path.join(process.cwd(), uri);
+    // to make sure we always get valid info from json file
+    // even if external codes are overriding it
+    config = getValuesFromConfigJson(jsonPath);
+    config = getBashParameters(config, BASH_COLORS_HELPER);
 
-        if (request.method !== 'GET' || path.join('/', uri).indexOf('../') !== -1) {
-            response.writeHead(401, {
-                'Content-Type': 'text/plain'
-            });
-            response.write('401 Unauthorized: ' + path.join('/', uri) + '\n');
-            response.end();
+    // HTTP_GET handling code goes below
+    try {
+        var uri, filename;
+
+        try {
+            if (!config.dirPath || !config.dirPath.length) {
+                config.dirPath = null;
+            }
+
+            uri = url.parse(request.url).pathname;
+            filename = path.join(config.dirPath ? resolveURL(config.dirPath) : process.cwd(), uri);
+        } catch (e) {
+            pushLogs(config, 'url.parse', e);
+        }
+
+        filename = (filename || '').toString();
+
+        if (request.method !== 'GET' || uri.indexOf('..') !== -1) {
+            try {
+                response.writeHead(401, {
+                    'Content-Type': 'text/plain'
+                });
+                response.write('401 Unauthorized: ' + path.join('/', uri) + '\n');
+                response.end();
+                return;
+            } catch (e) {
+                pushLogs(config, '!GET or ..', e);
+            }
+        }
+
+        if(filename.indexOf(resolveURL('/admin/')) !== -1 && config.enableAdmin !== true) {
+            try {
+                response.writeHead(401, {
+                    'Content-Type': 'text/plain'
+                });
+                response.write('401 Unauthorized: ' + path.join('/', uri) + '\n');
+                response.end();
+                return;
+            } catch (e) {
+                pushLogs(config, '!GET or ..', e);
+            }
             return;
         }
 
-        if (filename && filename.search(/server.js|Scalable-Broadcast.js|Signaling-Server.js/g) !== -1) {
-            response.writeHead(404, {
-                'Content-Type': 'text/plain'
-            });
-            response.write('404 Not Found: ' + path.join('/', uri) + '\n');
-            response.end();
-            return;
+        var matched = false;
+        ['/demos/', '/dev/', '/dist/', '/socket.io/', '/node_modules/canvas-designer/', '/admin/'].forEach(function(item) {
+            if (filename.indexOf(resolveURL(item)) !== -1) {
+                matched = true;
+            }
+        });
+
+        // files from node_modules
+        ['RecordRTC.js', 'FileBufferReader.js', 'getStats.js', 'getScreenId.js', 'adapter.js', 'MultiStreamsMixer.js'].forEach(function(item) {
+            if (filename.indexOf(resolveURL('/node_modules/')) !== -1 && filename.indexOf(resolveURL(item)) !== -1) {
+                matched = true;
+            }
+        });
+
+        if (filename.search(/.js|.json/g) !== -1 && !matched) {
+            try {
+                response.writeHead(404, {
+                    'Content-Type': 'text/plain'
+                });
+                response.write('404 Not Found: ' + path.join('/', uri) + '\n');
+                response.end();
+                return;
+            } catch (e) {
+                pushLogs(config, '404 Not Found', e);
+            }
         }
 
         ['Video-Broadcasting', 'Screen-Sharing', 'Switch-Cameras'].forEach(function(fname) {
-            if (filename && filename.indexOf(fname + '.html') !== -1) {
-                filename = filename.replace(fname + '.html', fname.toLowerCase() + '.html');
+            try {
+                if (filename.indexOf(fname + '.html') !== -1) {
+                    filename = filename.replace(fname + '.html', fname.toLowerCase() + '.html');
+                }
+            } catch (e) {
+                pushLogs(config, 'forEach', e);
             }
         });
 
@@ -118,7 +126,7 @@ function serverHandler(request, response) {
         try {
             stats = fs.lstatSync(filename);
 
-            if (filename && filename.search(/demos/g) === -1 && stats.isDirectory()) {
+            if (filename.search(/demos/g) === -1 && filename.search(/admin/g) === -1 && stats.isDirectory() && config.homePage === '/demos/index.html') {
                 if (response.redirect) {
                     response.redirect('/demos/');
                 } else {
@@ -138,21 +146,34 @@ function serverHandler(request, response) {
             return;
         }
 
-        if (fs.statSync(filename).isDirectory()) {
-            response.writeHead(404, {
-                'Content-Type': 'text/html'
-            });
+        try {
+            if (fs.statSync(filename).isDirectory()) {
+                response.writeHead(404, {
+                    'Content-Type': 'text/html'
+                });
 
-            if (filename.indexOf(resolveURL('/demos/MultiRTC/')) !== -1) {
-                filename = filename.replace(resolveURL('/demos/MultiRTC/'), '');
-                filename += resolveURL('/demos/MultiRTC/index.html');
-            } else if (filename.indexOf(resolveURL('/demos')) !== -1) {
-                filename = filename.replace(resolveURL('/demos/'), '');
-                filename = filename.replace(resolveURL('/demos'), '');
-                filename += resolveURL('/demos/index.html');
-            } else {
-                filename += resolveURL('/demos/index.html');
+                if (filename.indexOf(resolveURL('/demos/MultiRTC/')) !== -1) {
+                    filename = filename.replace(resolveURL('/demos/MultiRTC/'), '');
+                    filename += resolveURL('/demos/MultiRTC/index.html');
+                } else if (filename.indexOf(resolveURL('/admin/')) !== -1) {
+                    filename = filename.replace(resolveURL('/admin/'), '');
+                    filename += resolveURL('/admin/index.html');
+                } else if (filename.indexOf(resolveURL('/demos/dashboard/')) !== -1) {
+                    filename = filename.replace(resolveURL('/demos/dashboard/'), '');
+                    filename += resolveURL('/demos/dashboard/index.html');
+                } else if (filename.indexOf(resolveURL('/demos/video-conference/')) !== -1) {
+                    filename = filename.replace(resolveURL('/demos/video-conference/'), '');
+                    filename += resolveURL('/demos/video-conference/index.html');
+                } else if (filename.indexOf(resolveURL('/demos')) !== -1) {
+                    filename = filename.replace(resolveURL('/demos/'), '');
+                    filename = filename.replace(resolveURL('/demos'), '');
+                    filename += resolveURL('/demos/index.html');
+                } else {
+                    filename += resolveURL(config.homePage);
+                }
             }
+        } catch (e) {
+            pushLogs(config, 'statSync.isDirectory', e);
         }
 
         var contentType = 'text/plain';
@@ -177,41 +198,7 @@ function serverHandler(request, response) {
             }
 
             try {
-                var demos = (fs.readdirSync('demos') || []);
-
-                if (demos.length) {
-                    var h2 = '<h2 style="text-align:center;display:block;"><a href="https://www.npmjs.com/package/rtcmulticonnection-v3"><img src="https://img.shields.io/npm/v/rtcmulticonnection-v3.svg"></a><a href="https://www.npmjs.com/package/rtcmulticonnection-v3"><img src="https://img.shields.io/npm/dm/rtcmulticonnection-v3.svg"></a><a href="https://travis-ci.org/muaz-khan/RTCMultiConnection"><img src="https://travis-ci.org/muaz-khan/RTCMultiConnection.png?branch=master"></a></h2>';
-                    var otherDemos = '<section class="experiment" id="demos"><details><summary style="text-align:center;">Check ' + (demos.length - 1) + ' other RTCMultiConnection-v3 demos</summary>' + h2 + '<ol>';
-                    demos.forEach(function(f) {
-                        if (f && f !== 'index.html' && f.indexOf('.html') !== -1) {
-                            otherDemos += '<li><a href="/demos/' + f + '">' + f + '</a> (<a href="https://github.com/muaz-khan/RTCMultiConnection/tree/master/demos/' + f + '">Source</a>)</li>';
-                        }
-                    });
-                    otherDemos += '<ol></details></section><section class="experiment own-widgets latest-commits">';
-
-                    file = file.replace('<section class="experiment own-widgets latest-commits">', otherDemos);
-                }
-            } catch (e) {}
-
-            try {
-                var docs = (fs.readdirSync('docs') || []);
-
-                if (docs.length) {
-                    var html = '<section class="experiment" id="docs">';
-                    html += '<details><summary style="text-align:center;">RTCMultiConnection Docs</summary>';
-                    html += '<h2 style="text-align:center;display:block;"><a href="http://www.rtcmulticonnection.org/docs/">http://www.rtcmulticonnection.org/docs/</a></h2>';
-                    html += '<ol>';
-
-                    docs.forEach(function(f) {
-                        if (f.indexOf('DS_Store') == -1) {
-                            html += '<li><a href="https://github.com/muaz-khan/RTCMultiConnection/tree/master/docs/' + f + '">' + f + '</a></li>';
-                        }
-                    });
-
-                    html += '</ol></details></section><section class="experiment own-widgets latest-commits">';
-
-                    file = file.replace('<section class="experiment own-widgets latest-commits">', html);
-                }
+                file = file.replace('connection.socketURL = \'/\';', 'connection.socketURL = \'' + config.socketURL + '\';');
             } catch (e) {}
 
             response.writeHead(200, {
@@ -221,147 +208,84 @@ function serverHandler(request, response) {
             response.end();
         });
     } catch (e) {
+        pushLogs(config, 'Unexpected', e);
+
         response.writeHead(404, {
             'Content-Type': 'text/plain'
         });
-        response.write('<h1>Unexpected error:</h1><br><br>' + e.stack || e.message || JSON.stringify(e));
+        response.write('404 Not Found: Unexpected error.\n' + e.message + '\n\n' + e.stack);
         response.end();
     }
 }
 
-var app;
+var httpApp;
 
 if (isUseHTTPs) {
-    app = server.createServer(options, serverHandler);
-} else {
-    app = server.createServer(serverHandler);
-}
+    httpServer = require('https');
 
-function cmd_exec(cmd, args, cb_stdout, cb_end) {
-    var spawn = require('child_process').spawn,
-        child = spawn(cmd, args),
-        me = this;
-    me.exit = 0;
-    me.stdout = "";
-    child.stdout.on('data', function(data) {
-        cb_stdout(me, data)
-    });
-    child.stdout.on('end', function() {
-        cb_end(me)
-    });
-}
+    // See how to use a valid certificate:
+    // https://github.com/muaz-khan/WebRTC-Experiment/issues/62
+    var options = {
+        key: null,
+        cert: null,
+        ca: null
+    };
 
-function log_console() {
-    console.log(foo.stdout);
+    var pfx = false;
 
-    try {
-        var pidToBeKilled = foo.stdout.split('\nnode    ')[1].split(' ')[0];
-        console.log('------------------------------');
-        console.log('Please execute below command:');
-        console.log('\x1b[31m%s\x1b[0m ', 'kill ' + pidToBeKilled);
-        console.log('Then try to run "server.js" again.');
-        console.log('------------------------------');
-
-    } catch (e) {}
-}
-
-function runServer() {
-    app.on('error', function(e) {
-        if (e.code == 'EADDRINUSE') {
-            if (e.address === '0.0.0.0') {
-                e.address = 'localhost';
-            }
-
-            var socketURL = (isUseHTTPs ? 'https' : 'http') + '://' + e.address + ':' + e.port + '/';
-
-            console.log('------------------------------');
-            console.log('\x1b[31m%s\x1b[0m ', 'Unable to listen on port: ' + e.port);
-            console.log('\x1b[31m%s\x1b[0m ', socketURL + ' is already in use. Please kill below processes using "kill PID".');
-            console.log('------------------------------');
-
-            foo = new cmd_exec('lsof', ['-n', '-i4TCP:9001'],
-                function(me, data) {
-                    me.stdout += data.toString();
-                },
-                function(me) {
-                    me.exit = 1;
-                }
-            );
-
-            setTimeout(log_console, 250);
-        }
-    });
-
-    app = app.listen(port, process.env.IP || '0.0.0.0', function(error) {
-        var addr = app.address();
-
-        if (addr.address === '0.0.0.0') {
-            addr.address = 'localhost';
-        }
-
-        var domainURL = (isUseHTTPs ? 'https' : 'http') + '://' + addr.address + ':' + addr.port + '/';
-
-        console.log('------------------------------');
-
-        console.log('socket.io is listening at:');
-        console.log('\x1b[31m%s\x1b[0m ', '\t' + domainURL);
-
-        if (!isUseHTTPs) {
-            console.log('use --ssl to enable HTTPs:');
-            console.log('\x1b[31m%s\x1b[0m ', '\t' + 'node server.js --ssl');
-        }
-
-        console.log('Your web-browser (HTML file) MUST set this line:');
-        console.log('\x1b[31m%s\x1b[0m ', 'connection.socketURL = "' + domainURL + '";');
-
-        if (addr.address != 'localhost' && !isUseHTTPs) {
-            console.log('Warning:');
-            console.log('\x1b[31m%s\x1b[0m ', 'Please set isUseHTTPs=true to make sure audio,video and screen demos can work on Google Chrome as well.');
-        }
-
-        console.log('------------------------------');
-        console.log('Need help? http://bit.ly/2ff7QGk');
-    });
-
-    require('./Signaling-Server.js')(app, function(socket) {
-        try {
-            var params = socket.handshake.query;
-
-            // "socket" object is totally in your own hands!
-            // do whatever you want!
-
-            // in your HTML page, you can access socket as following:
-            // connection.socketCustomEvent = 'custom-message';
-            // var socket = connection.getSocket();
-            // socket.emit(connection.socketCustomEvent, { test: true });
-
-            if (!params.socketCustomEvent) {
-                params.socketCustomEvent = 'custom-message';
-            }
-
-            socket.on(params.socketCustomEvent, function(message) {
-                try {
-                    socket.broadcast.emit(params.socketCustomEvent, message);
-                } catch (e) {}
-            });
-        } catch (e) {}
-    });
-}
-
-if (autoRebootServerOnFailure) {
-    // auto restart app on failure
-    var cluster = require('cluster');
-    if (cluster.isMaster) {
-        cluster.fork();
-
-        cluster.on('exit', function(worker, code, signal) {
-            cluster.fork();
-        });
+    if (!fs.existsSync(config.sslKey)) {
+        console.log(BASH_COLORS_HELPER.getRedFG(), 'sslKey:\t ' + config.sslKey + ' does not exist.');
+    } else {
+        pfx = config.sslKey.indexOf('.pfx') !== -1;
+        options.key = fs.readFileSync(config.sslKey);
     }
 
-    if (cluster.isWorker) {
-        runServer();
+    if (!fs.existsSync(config.sslCert)) {
+        console.log(BASH_COLORS_HELPER.getRedFG(), 'sslCert:\t ' + config.sslCert + ' does not exist.');
+    } else {
+        options.cert = fs.readFileSync(config.sslCert);
     }
+
+    if (config.sslCabundle) {
+        if (!fs.existsSync(config.sslCabundle)) {
+            console.log(BASH_COLORS_HELPER.getRedFG(), 'sslCabundle:\t ' + config.sslCabundle + ' does not exist.');
+        }
+
+        options.ca = fs.readFileSync(config.sslCabundle);
+    }
+
+    if (pfx === true) {
+        options = {
+            pfx: sslKey
+        };
+    }
+
+    httpApp = httpServer.createServer(options, serverHandler);
 } else {
-    runServer();
+    httpApp = httpServer.createServer(serverHandler);
 }
+
+RTCMultiConnectionServer.beforeHttpListen(httpApp, config);
+httpApp = httpApp.listen(process.env.PORT || PORT, process.env.IP || "0.0.0.0", function() {
+    RTCMultiConnectionServer.afterHttpListen(httpApp, config);
+});
+
+// --------------------------
+// socket.io codes goes below
+
+ioServer(httpApp).on('connection', function(socket) {
+    RTCMultiConnectionServer.addSocket(socket, config);
+
+    // ----------------------
+    // below code is optional
+
+    const params = socket.handshake.query;
+
+    if (!params.socketCustomEvent) {
+        params.socketCustomEvent = 'custom-message';
+    }
+
+    socket.on(params.socketCustomEvent, function(message) {
+        socket.broadcast.emit(params.socketCustomEvent, message);
+    });
+});

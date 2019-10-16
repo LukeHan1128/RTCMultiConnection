@@ -10,7 +10,7 @@
 
 ```sh
 git clone https://github.com/muaz-khan/RTCMultiConnection.git ./
-npm install --production
+npm install
 ```
 
 Or download ZIP:
@@ -20,15 +20,14 @@ wget https://github.com/muaz-khan/RTCMultiConnection/archive/master.zip
 unzip master.zip
 ```
 
-Then call `npm install --production`.
+Then call `npm install`.
 
-Use `--production` to skip `grunt` dependencies. You don't need `grunt` until you modify library itself.
 
 # Install using NPM or Bower
 
 
 ```sh
-npm install rtcmulticonnection --production
+npm install rtcmulticonnection
 
 # or
 bower install rtcmulticonnection
@@ -37,6 +36,10 @@ bower install rtcmulticonnection
 # Run `server.js`
 
 ```sh
+# install all required packages first
+npm install
+
+# then run the server
 node server.js
 ```
 
@@ -44,7 +47,7 @@ Now open `http://localhost:9001/`.
 
 # Modify config.json
 
-* https://github.com/muaz-khan/RTCMultiConnection/blob/master/config.json
+* https://github.com/muaz-khan/RTCMultiConnection-Server/wiki/config.json
 
 ```json
 {
@@ -86,7 +89,20 @@ fuser -vk 9001/tcp
 
 Now open: `http://localhost:9001/`
 
-## Keep running server in background
+## Keep running server in background using `pm2`
+
+``sh
+npm install pm2 -g
+pm2 startup  
+pm2 start server.js
+pm2 save
+```
+
+Now `server.js` will auto restart on failure. Even auto run as soon as operating system reboots.
+
+For more info about `pm2` please check [this link](https://github.com/Unitech/pm2).
+
+## Keep running server in background usnig `nohup`
 
 ```sh
 nohup nodejs server.js > /dev/null 2>&1 &
@@ -123,6 +139,20 @@ Commands to interact with `service ncustomAppName Start`:
 ```
 
 More info about `forever-service` [here](http://stackoverflow.com/a/36027516/552182).
+
+# Heroku
+
+If you are installing on heroku, please make sure to enable following config variables:
+
+1. `NODE_MODULES_CACHE:false`
+2. `NPM_CONFIG_PRODUCTION:false`
+3. `YARN_PRODUCTION:false`
+
+You can set above variables through heroku CLI as well:
+
+```sh
+heroku config:set NPM_CONFIG_PRODUCTION=false YARN_PRODUCTION=false NODE_MODULES_CACHE=false
+```
 
 # Other Documents
 

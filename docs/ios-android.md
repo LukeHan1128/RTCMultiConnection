@@ -4,6 +4,10 @@
 > 
 > So you do not need to build a cordova or ionic application.
 
+Here is list of all cordova/iosnic demos: 
+
+* https://github.com/muaz-khan/cordova-mobile-apps
+
 Please check these docs as well:
 
 * [Write iOS apps using RTCMultiConnection](http://www.rtcmulticonnection.org/docs/Write-iOS-Apps/)
@@ -13,7 +17,7 @@ Please check these docs as well:
 
 ## iPhone, iPad, Nexus, Samsung, many other devices
 
-> This page explains how to write iOS+Android phonegap/cordova applications for RTCMultiConnection-v3.
+> This page explains how to write iOS+Android phonegap/cordova applications for RTCMultiConnection.
 
 # Cordova Demos
 
@@ -101,8 +105,8 @@ cordova platform remove ios
 cordova platform remove android
 
 # add latest platform versions
-cordova platform add ios
-cordova platform add android
+cordova platform add android@6.3.0
+cordova platform add ios@4.4.0
 ```
 
 # Build your Apps
@@ -201,9 +205,9 @@ An example `config.xml` file (make sure that `icon.png` has valid path):
 </widget>
 ```
 
-# Use RTCMultiConnection-v3
+# Use RTCMultiConnection
 
-> This section explains how to integrate RTCMultiConnection-v3 for both iOS and Android apps.
+> This section explains how to integrate RTCMultiConnection for both iOS and Android apps.
 
 Download and link [`RTCMultiConnection.js`](https://github.com/muaz-khan/RTCMultiConnection/tree/master/dist/RTCMultiConnection.js):
 
@@ -211,7 +215,7 @@ Download and link [`RTCMultiConnection.js`](https://github.com/muaz-khan/RTCMult
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>CordovaApp using RTCMultiConnection-v3</title>
+    <title>CordovaApp using RTCMultiConnection</title>
     <link rel="stylesheet" href="css/index.css">
 </head>
 <body>
